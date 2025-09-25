@@ -29,6 +29,7 @@ test = ["pytest"]
 
 [project.scripts]
 move-to-album-subfolders = "music_manager.move_to_album_subfolders:main"
+create-playlist = "music_manager.create_playlist:main"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "W6", "B", "I"]
