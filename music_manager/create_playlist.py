@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from music_manager.utilities.arguments import add_common_arguments_to_parser
+from music_manager.utilities.constants import M3U_HEADER
 from music_manager.utilities.logging import set_log_level
 
 
@@ -19,14 +20,14 @@ def create_playlist(
     files.sort(key=lambda file: file.stat().st_birthtime)
 
     with open(output, "w", encoding="utf-8") as output_file:
-        output_file.write("#EXTM3U\n")
+        output_file.write(M3U_HEADER)
         for file in files:
             logging.debug(f"Writing file {file}")
             output_file.write(f"{file.name}\n")
 
 
 def create_playlist_main(args: argparse.Namespace):
-    create_playlist(args.path, args.output)
+    create_playlist(args.root, args.output)
 
 
 def main():
@@ -35,8 +36,8 @@ def main():
         description="Creates a playlist from the content of a directory, sorted by age.",
     )
     parser.add_argument(
-        "-p",
-        "--path",
+        "-r",
+        "--root",
         type=Path,
         default=Path("."),
         help="Path to a directory containing files to add to a playlist",
