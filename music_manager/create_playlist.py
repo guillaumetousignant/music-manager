@@ -53,7 +53,7 @@ def main():
     parser.set_defaults(func=create_playlist_main)
 
     args = parser.parse_args(sys.argv[1:])
-    set_log_level(args.verbosity)
+    set_log_level(args.verbosity, args.logfile)
 
     try:
         args.func(args)

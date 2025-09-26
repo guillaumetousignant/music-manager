@@ -1,7 +1,9 @@
 import logging
+from pathlib import Path
+from typing import Optional
 
 
-def set_log_level(verbosity: int):
+def set_log_level(verbosity: int, log_file: Optional[Path] = None):
     match verbosity:
         case 0:
             log_level = logging.WARNING
@@ -18,4 +20,6 @@ def set_log_level(verbosity: int):
         level=log_level,
         format="%(asctime)s:%(levelname)s:%(name)s:%(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S%z",
+        filename=log_file,
+        filemode="a",
     )

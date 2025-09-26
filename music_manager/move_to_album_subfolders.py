@@ -2,40 +2,79 @@
 
 import argparse
 import logging
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
 
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
+from pathvalidate import ValidationError, sanitize_filename, validate_filename
 
 from music_manager.utilities.arguments import add_common_arguments_to_parser
-from music_manager.utilities.constants import M3U_HEADER
+from music_manager.utilities.constants import (
+    DELIMITER,
+    M3U_HEADER,
+    MP3_ALBUM_KEY,
+    MP3_ARTIST_KEY,
+    MP4_ALBUM_KEY,
+    MP4_ARTIST_KEY,
+)
 from music_manager.utilities.logging import set_log_level
 
 
-def get_mp3_album(path: Path) -> Optional[str]:
+def get_mp3_artist_and_album(path: Path) -> tuple[Optional[str], Optional[str]]:
     music_file = ID3(path)
-    albums = music_file.get("album")  # type: ignore
-    return None if albums is None else albums[0]  # type: ignore
+
+    albums = music_file.get(MP3_ALBUM_KEY)  # type: ignore
+    album = None if albums is None else albums.text[0]  # type: ignore
+
+    artists = music_file.get(MP3_ARTIST_KEY)  # type: ignore
+    artist = None if artists is None else artists.text[0]  # type: ignore
+
+    return (album, artist)  # type: ignore
 
 
-def get_m4a_album(path: Path) -> Optional[str]:
+def get_m4a_artist_and_album(path: Path) -> tuple[Optional[str], Optional[str]]:
     music_file = MP4(path)
-    albums = music_file.get("©alb")  # type: ignore
-    return None if albums is None else albums[0]  # type: ignore
+
+    albums = music_file.get(MP4_ALBUM_KEY)  # type: ignore
+    album = None if albums is None else albums[0]  # type: ignore
+
+    artists = music_file.get(MP4_ARTIST_KEY)  # type: ignore
+    artist = None if artists is None else artists[0]  # type: ignore
+
+    return (album, artist)  # type: ignore
+
+
+def sanitise_string_for_path(string: str, name: str) -> str:
+    try:
+        validate_filename(string)
+    except ValidationError as e:
+        replaced_string = sanitize_filename(string)
+        logging.info(
+            f'Validation of {name} with value "{string}" failed, replacing by "{replaced_string}". Error: {e}'
+        )
+        string = replaced_string
+    return string
 
 
 def move_to_album_subfolders(
     root: Path,
+    new_root: Path,
     input: Path,
     output: Path,
 ):
-    logging.info(f"Processing path {root}")
+    logging.info(f"Processing path {root}, copying to path {new_root}")
 
     if input == output:
         raise RuntimeError(
             f"Input and output files are the same, {input}, this is not supported"
+        )
+
+    if root == new_root:
+        raise RuntimeError(
+            f"Original and new roots are the same, {root}, this is not supported"
         )
 
     logging.info(f"Input playlist: {input}")
@@ -59,19 +98,41 @@ def move_to_album_subfolders(
 
                 match extension.casefold():
                     case ".mp3":
-                        album = get_mp3_album(filepath)
+                        album, artist = get_mp3_artist_and_album(filepath)
                     case ".m4a":
-                        album = get_m4a_album(filepath)
+                        album, artist = get_m4a_artist_and_album(filepath)
                     case unknown_extension:
                         raise RuntimeError(
                             f"Unsupported extension {unknown_extension} for file {filename} at {filepath}"
                         )
 
-                print(album)
+                if artist is None:
+                    raise RuntimeError(
+                        f"Missing artist for file {filename} at {filepath}"
+                    )
+
+                if album is None:
+                    raise RuntimeError(
+                        f"Missing album for file {filename} at {filepath}"
+                    )
+
+                album = sanitise_string_for_path(album, "album")
+                artist = sanitise_string_for_path(artist, "artist")
+
+                new_folder = new_root / artist / album
+                new_folder.mkdir(parents=True, exist_ok=True)
+
+                new_path = new_folder / filename
+                new_entry = DELIMITER.join([artist, album, filename])
+
+                output_file.write(f"{new_entry}\n")
+
+                logging.debug(f"Copying entry {filename} to {new_entry}")
+                shutil.copy(filepath, new_path)
 
 
 def move_to_album_subfolders_main(args: argparse.Namespace):
-    move_to_album_subfolders(args.root, args.input, args.output)
+    move_to_album_subfolders(args.root, args.new_root, args.input, args.output)
 
 
 def main():
@@ -83,8 +144,15 @@ def main():
         "-r",
         "--root",
         type=Path,
-        default=Path("."),
-        help="Path to a directory where music is organised and to which playlists are relative",
+        default=Path("Flat/"),
+        help="Path to a directory where music is organised in a flat fashion and to which the input playlist is relative",
+    )
+    parser.add_argument(
+        "-n",
+        "--new-root",
+        type=Path,
+        default=Path("Sorted/"),
+        help="Path to a directory where music is to be organised per artist and album and to which the output playlist is relative",
     )
     parser.add_argument(
         "-i",
@@ -104,7 +172,7 @@ def main():
     parser.set_defaults(func=move_to_album_subfolders_main)
 
     args = parser.parse_args(sys.argv[1:])
-    set_log_level(args.verbosity)
+    set_log_level(args.verbosity, args.logfile)
 
     try:
         args.func(args)
